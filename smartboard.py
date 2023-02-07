@@ -3,9 +3,6 @@
 """
 großer TV : 40 px/square
 kleiner tv wohnung 82 px/square
-
-ToDo
-check why moving map is so slow
 """
 
 camMoveDistance = 82
@@ -47,8 +44,8 @@ Load Image for QR Code, map & mask
 """
 x0y0 = pygame.image.load('00.png')
 x0y0rect = x0y0.get_rect()
-picture = pygame.image.load('F:\pathfinder\FortBruchhügel\Eastwing_wohnung.png')
-mask = pygame.image.load('F:\pathfinder\FortBruchhügel\Eastwing_wohnung_mask.png')
+picture = pygame.image.load('F:\pathfinder\OlegsAusenposten\OlegsPosten_wohnung.png')
+mask = pygame.image.load('F:\pathfinder\OlegsAusenposten\OlegsPosten_wohnung_mask.png')
 
 #picture = pygame.image.load('bridges.png')
 #mask = pygame.image.load('bridges_mask.png')
@@ -81,18 +78,24 @@ def get_ray_pos(pos, angle): #Check for LOS obstructing elements, starting at po
     m = 0
     hotFlag = False
 
-    while (pos[1] - n) > 0 and (pos[1] - n) < mask.get_height() and (pos[0] - m) > 0 and (pos[0] - m) < mask.get_width():
-        try:
+    try: #if circle is out of bounds it causes a crash => Fix: ignore circles
+        colP = mask.get_at((int(pos[0]) ,int(pos[1])))
+        colVal = colP[1] + colP[2] + colP[3] + colP[0]
+
+        hotColour = (0,0,0,0)
+
+        while (pos[1] - n) > 0 and (pos[1] - n) < mask.get_height() and (pos[0] - m) > 0 and (pos[0] - m) < mask.get_width():
             colour = mask.get_at((int(pos[0] - m) ,int(pos[1] - n)))
-            if colour == (0,0,0,255) and not hotFlag:
+            if colour[0]+ colour[1] + colour[2] + colour[3] < colVal and not hotFlag:
                 hotFlag = True
-            if colour != (0,0,0,255) and hotFlag:
+                hotColour = colour
+            if colour != hotColour and hotFlag:
                 break
             else:
                 m+= math.cos(angle*math.pi/180)
                 n+= math.sin(angle*math.pi/180)
-        except:
-            pass
+    except:
+        pass
 
     return (pos[0] - m, pos[1]-n)
 
@@ -128,7 +131,19 @@ def isGray (center, radius, feed, contour): #WIP colour detecting to ignore gray
     #ma = np.unravel_index(hist.argmax(), hist.shape)
     return mn
 
+def getRGB (center, radius, feed, contour):
+    center = int(center[0]), int(center[1])
+    hsv = cv2.cvtColor(feed, cv2.COLOR_BGR2RGB)
+    #h,w,z = feed.shape
+    mask = np.zeros(hsv.shape[:2], dtype=np.uint8)
+    cv2.drawContours(mask,contour,-1,255,-1)
+    #cv2.circle(mask, center, int(radius), 255, -1)
+    mn = cv2.mean(hsv, mask)
+    return mn
+
 centers = []
+centerColours = []
+fogOfWarFlag = True
 run = True
 
 while run: # Main PyGame loop
@@ -146,6 +161,8 @@ while run: # Main PyGame loop
 
         if event.type == pygame.KEYDOWN:
 
+            if event.key == pygame.K_TAB:
+                fogOfWarFlag = not fogOfWarFlag
             if event.key == pygame.K_w:
                 cameray -= camMoveDistance
                 cameraCircley -= camMoveDistance
@@ -246,6 +263,7 @@ while run: # Main PyGame loop
                 cameraCirclex = 0
                 cameraCircley = 0
                 centers = []
+                centerColours = []
 
                 win.fill((255,255,255))
                 #pygame.draw.circle(win, (255,0,0), (int(corner00[0]), int(corner00[1])), 50) #Draw detected top left corner on screen
@@ -272,7 +290,8 @@ while run: # Main PyGame loop
                         filters out contours that are too close to the border
                         (had some issues with false positives at the edge of the screen)
                         """
-                        if radius > 15 and radius < 100 and center[0] > lowerborderx and center[0] < upperborderx and center[1] > lowerbordery and center[1] < upperbordery:
+                        print("radius: " + radius)
+                        if radius > 10 and radius < 100: #and center[0] > lowerborderx and center[0] < upperborderx and center[1] > lowerbordery and center[1] < upperbordery:
                             """
                             First attempts at colour detection
                             """
@@ -280,6 +299,7 @@ while run: # Main PyGame loop
                             if g2 > gray2:
                                 cv2.circle(th3, (int(center[0]), int(center[1])), int(radius), (0, 255, 0), 3)
                                 centers.append(transform(center, corner00, corner11)) # centers define the points where minis were detected
+                                centerColours.append(getRGB(center, radius, frame, contour));
 
                 cv2.waitKey(1)
                 print("done")
@@ -300,14 +320,12 @@ while run: # Main PyGame loop
                 poly = pygame.draw.polygon(mask_calc, 255, corners, 0)
                 stamp(win, picture,mask_calc)
 
-            for center in centers:
-                """
-                draw a red circle where a mini was detected
-                ToDo: make the colour of the circle the actual colour of the mini
-                """
-                pygame.draw.circle(win, (255,0,0), (int(center[0] + camerax), int(center[1] + cameray)), 50)
+            if not fogOfWarFlag:
+                win.blit(picture, (camerax, cameray))
+
+            for center, colli in zip (centers, centerColours):
+                pygame.draw.circle(win, colli, (int(center[0] + camerax), int(center[1] + cameray)), 50)
 
             pygame.display.flip()
-
 
 pygame.quit()
